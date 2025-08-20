@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Скрипт для замены ключевых терминов на вымышленные
+Скрипт для замены ключевых терминов на вымышленные с поддержкой склонений и неполных имен
 """
 
 import json
@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from tqdm import tqdm
 import logging
+from typing import Dict, List, Tuple
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,6 +26,7 @@ class TermReplacer:
         """
         self.terms_map_file = terms_map_file
         self.terms_map = {}
+        self.expanded_terms_map = {}  # Расширенный словарь с вариациями
         self.load_terms_map()
     
     def load_terms_map(self):
@@ -36,11 +38,95 @@ class TermReplacer:
                 with open(self.terms_map_file, 'r', encoding='utf-8') as f:
                     self.terms_map = json.load(f)
                 logger.info(f"Загружен словарь замен: {len(self.terms_map)} терминов")
+                self._expand_terms_map()
             except Exception as e:
                 logger.error(f"Ошибка при загрузке словаря замен: {e}")
                 self.terms_map = {}
         else:
             logger.info("Файл словаря замен не найден, будет создан новый")
+    
+    def _expand_terms_map(self):
+        """
+        Расширение словаря терминов для обработки склонений и неполных имен
+        """
+        self.expanded_terms_map = {}
+        
+        for original, replacement in self.terms_map.items():
+            # Добавляем основное соответствие
+            self.expanded_terms_map[original] = replacement
+            
+            # Разбиваем составные имена
+            name_parts = original.split()
+            if len(name_parts) > 1:
+                # Обрабатываем каждую часть имени отдельно
+                for i, part in enumerate(name_parts):
+                    # Создаем замену для части имени
+                    if len(name_parts) == 2:  # Имя + Фамилия
+                        if i == 0:  # Имя
+                            part_replacement = replacement.split()[0] if len(replacement.split()) > 0 else replacement
+                        else:  # Фамилия
+                            part_replacement = replacement.split()[-1] if len(replacement.split()) > 0 else replacement
+                    else:
+                        part_replacement = replacement
+                    
+                    # Добавляем различные формы
+                    variations = self._generate_variations(part, part_replacement)
+                    for variation, var_replacement in variations.items():
+                        self.expanded_terms_map[variation] = var_replacement
+            
+            # Добавляем склонения для полного имени
+            full_variations = self._generate_variations(original, replacement)
+            for variation, var_replacement in full_variations.items():
+                self.expanded_terms_map[variation] = var_replacement
+    
+    def _generate_variations(self, original: str, replacement: str) -> Dict[str, str]:
+        """
+        Генерация различных форм слова (склонения, притяжательные формы и т.д.)
+        
+        Args:
+            original (str): Оригинальное слово
+            replacement (str): Заменяющее слово
+            
+        Returns:
+            Dict[str, str]: Словарь вариаций
+        """
+        variations = {}
+        
+        # Базовые формы
+        variations[original] = replacement
+        variations[original.lower()] = replacement.lower()
+        variations[original.upper()] = replacement.upper()
+        variations[original.title()] = replacement.title()
+        
+        # Притяжательные формы (английский)
+        if original.endswith('s'):
+            # Если слово заканчивается на 's', добавляем апостроф
+            variations[f"{original}'"] = f"{replacement}'"
+            variations[f"{original}'s"] = f"{replacement}'s"
+        else:
+            # Обычные притяжательные формы
+            variations[f"{original}'s"] = f"{replacement}'s"
+            variations[f"{original}s'"] = f"{replacement}s'"
+        
+        # Множественное число (базовые правила)
+        if not original.endswith('s'):
+            variations[f"{original}s"] = f"{replacement}s"
+        
+        # Специальные случаи для имен
+        if original.lower() in ['luke', 'vader', 'han', 'leia', 'chewbacca', 'yoda', 'obi-wan', 'palpatine', 'boba']:
+            # Добавляем формы с апострофами для имен
+            variations[f"{original}'s"] = f"{replacement}'s"
+            variations[f"{original}'"] = f"{replacement}'"
+        
+        # Обработка составных имен с дефисами
+        if '-' in original:
+            parts = original.split('-')
+            if len(parts) == 2:
+                # Obi-Wan -> Obi-Wan's, Obi-Wans
+                variations[f"{original}'s"] = f"{replacement}'s"
+                variations[f"{original}s"] = f"{replacement}s"
+        
+        return variations
     
     def save_terms_map(self):
         """
@@ -66,7 +152,7 @@ class TermReplacer:
     
     def replace_terms_in_text(self, text):
         """
-        Замена терминов в тексте
+        Замена терминов в тексте с учетом склонений и неполных имен
         
         Args:
             text (str): Исходный текст
@@ -74,19 +160,20 @@ class TermReplacer:
         Returns:
             str: Текст с замененными терминами
         """
-        if not self.terms_map:
+        if not self.expanded_terms_map:
             return text
         
         # Сортируем термины по длине (от длинных к коротким), чтобы избежать частичных замен
-        sorted_terms = sorted(self.terms_map.keys(), key=len, reverse=True)
+        sorted_terms = sorted(self.expanded_terms_map.keys(), key=len, reverse=True)
         
         result_text = text
         
         for original_term in sorted_terms:
-            replacement_term = self.terms_map[original_term]
+            replacement_term = self.expanded_terms_map[original_term]
             
-            # Используем регулярное выражение для замены с учетом регистра
-            pattern = re.compile(re.escape(original_term), re.IGNORECASE)
+            # Используем регулярное выражение для замены с учетом границ слов
+            # Это предотвращает замену частей других слов
+            pattern = re.compile(r'\b' + re.escape(original_term) + r'\b', re.IGNORECASE)
             result_text = pattern.sub(replacement_term, result_text)
         
         return result_text
@@ -167,13 +254,36 @@ class TermReplacer:
         
         logger.info(f"Обработано файлов: {processed_count}/{len(text_files)}")
         return processed_count
+    
+    def get_expanded_terms_count(self):
+        """
+        Получение количества расширенных терминов
+        
+        Returns:
+            int: Количество терминов в расширенном словаре
+        """
+        return len(self.expanded_terms_map)
+    
+    def print_expanded_terms(self, limit=20):
+        """
+        Вывод расширенных терминов для отладки
+        
+        Args:
+            limit (int): Максимальное количество терминов для вывода
+        """
+        logger.info(f"Расширенный словарь содержит {len(self.expanded_terms_map)} терминов:")
+        for i, (original, replacement) in enumerate(self.expanded_terms_map.items()):
+            if i >= limit:
+                logger.info(f"... и еще {len(self.expanded_terms_map) - limit} терминов")
+                break
+            logger.info(f"  '{original}' → '{replacement}'")
 
 def create_star_wars_terms_map():
     """
-    Создание словаря замен для Star Wars
+    Создание словаря замен для Star Wars с улучшенной обработкой имен
     """
     terms_map = {
-        # Персонажи
+        # Персонажи (полные имена)
         "Darth Vader": "Xarn Velgor",
         "Luke Skywalker": "Kael Stormweaver",
         "Han Solo": "Zane Blackwood",
@@ -185,6 +295,16 @@ def create_star_wars_terms_map():
         "Obi-Wan Kenobi": "Obi-Wan Kalderis",
         "Emperor Palpatine": "Emperor Malakar",
         "Boba Fett": "Boba Krell",
+        "Anakin Skywalker": "Anakin Stormweaver",
+        "Padmé Amidala": "Padmé Aquara",
+        "Mace Windu": "Mace Thunder",
+        "Qui-Gon Jinn": "Qui-Gon Storm",
+        "Count Dooku": "Count Shadow",
+        "Darth Maul": "Darth Shadow",
+        "General Grievous": "General Void",
+        "Jango Fett": "Jango Krell",
+        "Captain Rex": "Captain Void",
+        "Commander Cody": "Commander Void",
         
         # Объекты и технологии
         "Death Star": "Void Core",
@@ -285,6 +405,9 @@ def main():
     
     # Сохраняем словарь замен
     replacer.save_terms_map()
+    
+    # Показываем расширенные термины
+    replacer.print_expanded_terms(30)
     
     # Обрабатываем файлы в папке knowledge_base
     input_directory = "knowledge_base"

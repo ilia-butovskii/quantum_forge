@@ -1,0 +1,7 @@
+sentence-transformers==2.2.2
+langchain==0.1.0
+langchain-text-splitters==0.0.1
+numpy==1.24.3
+torch==2.0.1
+transformers==4.35.0
+
