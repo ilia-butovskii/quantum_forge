@@ -135,8 +135,8 @@ class KnowledgeBaseProcessor:
         chunks = self.split_into_chunks(documents)
 
         chroma_client = chromadb.HttpClient(
-            host="localhost",
-            port=8000
+            host=os.getenv("CHROMADB_HOST"),
+            port=os.getenv("CHROMADB_PORT")
         )
 
         # Удаляем существующую коллекцию если она есть
@@ -188,8 +188,8 @@ class KnowledgeBaseProcessor:
         print("🔍 Тестирование коллекции...")
         
         chroma_client = chromadb.HttpClient(
-            host="localhost",
-            port=8000
+            host=os.getenv("CHROMADB_HOST"),
+            port=os.getenv("CHROMADB_PORT")
         )
         
         try:
