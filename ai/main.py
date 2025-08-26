@@ -7,8 +7,8 @@ import re
 class ContextService:
     def __init__(self):
         self.chroma_client = chromadb.HttpClient(
-            host="localhost",
-            port=8000
+            host=os.getenv("CHROMADB_HOST"),
+            port=os.getenv("CHROMADB_PORT")
         )
         self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
