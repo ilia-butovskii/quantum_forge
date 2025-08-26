@@ -1,0 +1,5 @@
+scraper/.venv
+scraper/__pycache__
+ai/__pycache__
+ai/.venv
+.env

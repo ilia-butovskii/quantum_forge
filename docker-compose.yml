@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: quantum_forge_chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chromadb_data:/chroma/chroma
+    networks:
+      - quantum_forge_network
+
+  ai-app:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    container_name: quantum_forge_ai
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - INIT_DATABASE=${INIT_DATABASE}
+    depends_on:
+      - chromadb
+    networks:
+      - quantum_forge_network
+
+networks:
+  quantum_forge_network:
+    driver: bridge
+
+volumes:
+  chromadb_data:
+    driver: local
